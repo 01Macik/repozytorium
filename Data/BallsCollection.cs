@@ -12,17 +12,21 @@ namespace Data
             balls = new List<IBall>();
         }
 
-        public IBall CreateBall(Vector2 position, Vector2 velocity, int radius)
+        public List<Vector2> GetBallsPositions()
         {
-            int ballID = balls.Count;
-            Ball ball = new Ball(position, velocity, radius, ballID);
-            balls.Add(ball);
-            return ball;
+            List<Vector2> positions = new List<Vector2>();
+            for (int i = 0; i < balls.Count; i++)
+            {
+                positions.Add(balls[i].Position);
+            }
+            return positions;
         }
 
-        public List<IBall> GetAllBalls()
+        public IBall CreateBall(Vector2 position, Vector2 velocity)
         {
-            return balls;
+            Ball ball = new Ball(position, velocity);
+            balls.Add(ball);
+            return ball;
         }
 
         public void Clear()
@@ -33,6 +37,11 @@ namespace Data
         public IBall GetBall(int ballId)
         {
             return balls[ballId];
+        }
+
+        public List<IBall> GetBalls()
+        {
+            return balls;
         }
 
         public int GetBallsCount()

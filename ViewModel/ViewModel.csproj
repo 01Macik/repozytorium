@@ -47,14 +47,6 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Data\Data.csproj">
-      <Project>{49e4c203-8240-495a-9b73-45f3bdc6177b}</Project>
-      <Name>Data</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\Logic\Logic.csproj">
-      <Project>{e1b3c017-35f7-4764-800a-97a171116992}</Project>
-      <Name>Logic</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Model\Model.csproj">
       <Project>{6d1e95a5-3407-45ed-a03b-174c66f5f3d2}</Project>
       <Name>Model</Name>

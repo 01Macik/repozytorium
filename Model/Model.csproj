@@ -35,6 +35,7 @@
     <Reference Include="PresentationFramework" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Numerics" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -48,10 +49,6 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Data\Data.csproj">
-      <Project>{49e4c203-8240-495a-9b73-45f3bdc6177b}</Project>
-      <Name>Data</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Logic\Logic.csproj">
       <Project>{e1b3c017-35f7-4764-800a-97a171116992}</Project>
       <Name>Logic</Name>
