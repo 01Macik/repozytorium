@@ -1,16 +1,18 @@
 ﻿using Data;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Timers;
 
 namespace Logic
 {
     public interface ICollisionHandler
     {
         event EventHandler<CollisionEventArgs> CollisionDetected;
-
         void HandleCollision(IBall ball1, IBall ball2);
     }
 
@@ -25,7 +27,8 @@ namespace Logic
             Ball2 = ball2;
         }
     }
-    public abstract class LogicAbstractAPI
+
+    public abstract class LogicAbstractAPI : IObserver<IBall>, IObservable<int>
     {
         public abstract void Start();
         public abstract void Stop();
@@ -37,6 +40,10 @@ namespace Logic
         public abstract IBall GetBall(int index);
         public abstract Task DetectAndHandleCollisions();
         public abstract void ClearBalls();
+        public abstract void OnCompleted();
+        public abstract void OnError(Exception error);
+        public abstract void OnNext(IBall ball);
+        public abstract IDisposable Subscribe(IObserver<int> observer);
         public static LogicAbstractAPI CreateLogicAPI()
         {
             return new LogicAPI();
@@ -47,11 +54,33 @@ namespace Logic
     {
         private DataAbstractAPI dataAPI;
         public event EventHandler<CollisionEventArgs> CollisionDetected;
+        private object lockObject = new object();
+        private IObserver<int> observer = null;
+        private System.Timers.Timer logTimer;
+        private const string LogFilePath = "ball_positions_log.txt";
+
+        private class Unsubscriber : IDisposable
+        {
+            private IObserver<int> _observer;
+
+            public Unsubscriber(IObserver<int> observer)
+            {
+                this._observer = observer;
+            }
+
+            public void Dispose()
+            {
+                _observer = null;
+            }
+        }
 
         public LogicAPI()
         {
             this.dataAPI = DataAbstractAPI.CreateAPI();
+            logTimer = new System.Timers.Timer(1000); // Set interval to 1 second (1000 ms)
+            logTimer.Elapsed += OnLogTimerElapsed;
         }
+
         public override Vector2 GetBallPosition(int index)
         {
             return dataAPI.GetBall(index).Position;
@@ -64,7 +93,10 @@ namespace Logic
 
         public override void ClearBalls()
         {
-            dataAPI.ClearBalls();
+            lock (lockObject)
+            {
+                dataAPI.ClearBalls();
+            }
         }
 
         public override int GetBallRadius()
@@ -93,15 +125,15 @@ namespace Logic
                 bool overlap = true;
                 Vector2 position = new Vector2(0, 0);
 
-                // Repeat until a non-overlapping position is found
+                // repeat until a non-overlapping position is found
                 while (overlap)
                 {
                     overlap = false;
                     position = new Vector2(
-                        rand.Next(1+GetBallRadius(), dataAPI.GetBoardWidth() - GetBallRadius()-1),
-                        rand.Next(1+GetBallRadius(), dataAPI.GetBoardHeight() - GetBallRadius())-1);
+                        rand.Next(1 + GetBallRadius(), dataAPI.GetBoardWidth() - GetBallRadius() - 1),
+                        rand.Next(1 + GetBallRadius(), dataAPI.GetBoardWidth() - GetBallRadius()) - 1);
 
-                    // Check if the new position overlaps with any existing ball
+                    // check if the new position overlaps with any existing ball
                     foreach (var existingPosition in ballPositions)
                     {
                         if (Vector2.Distance(existingPosition, position) <= ballRadius)
@@ -111,33 +143,51 @@ namespace Logic
                         }
                     }
                 }
+                // if no overlap, add the position to the list
+                lock (lockObject)
+                {
+                    ballPositions.Add(position);
+                    IBall newBall = dataAPI.CreateBall(position, Vector2.Zero);
 
-                // Add the new position to the list
-                ballPositions.Add(position);
-
-                // Create the ball at the non-overlapping position
-                IBall newBall = dataAPI.CreateBall(position, Vector2.Zero);
-
-                // Assign random velocity to the new ball
-                Vector2 maxVelocity = new Vector2(6.0f, 6.0f);
-                Vector2 velocity = new Vector2(
-                    (float)(rand.NextDouble() * maxVelocity.X - (maxVelocity.X / 2)),
-                    (float)(rand.NextDouble() * maxVelocity.Y - (maxVelocity.Y / 2))
-                );
-                newBall.Velocity = velocity;
+                    Vector2 maxVelocity = new Vector2(6.0f, 6.0f);
+                    Vector2 velocity = new Vector2(
+                        (float)(rand.NextDouble() * maxVelocity.X - (maxVelocity.X / 2)),
+                        (float)(rand.NextDouble() * maxVelocity.Y - (maxVelocity.Y / 2))
+                    );
+                    newBall.Velocity = velocity;
+                    _ = newBall.Subscribe(this); // subscribe to state change notifications for newBall
+                }
             }
         }
 
+        public override IDisposable Subscribe(IObserver<int> observer)
+        {
+            this.observer = observer;
+            return new Unsubscriber(this.observer);
+        }
+
+        public override void OnCompleted()
+        {
+            throw new NotImplementedException();
+        }
+
+        public override void OnError(Exception error)
+        {
+            throw new NotImplementedException();
+        }
 
         public override void Start()
         {
             int numberOfBalls = dataAPI.GetBallsCount();
+
             for (int i = 0; i < numberOfBalls; i++)
             {
                 IBall ball = dataAPI.GetBall(i);
                 Thread thread = new Thread(new ThreadStart(ball.StartMoving));
                 thread.Start();
             }
+
+            logTimer.Start(); // Start the logging timer
         }
 
         public override void Stop()
@@ -149,6 +199,31 @@ namespace Logic
                 IBall ball = dataAPI.GetBall(i);
                 ball.StopMoving();
             }
+
+            logTimer.Stop(); // Stop the logging timer
+        }
+
+        private async void OnLogTimerElapsed(object sender, ElapsedEventArgs e)
+        {
+            await LogBallPositions();
+        }
+
+        private async Task LogBallPositions()
+        {
+            await Task.Run(() =>
+            {
+                List<Vector2> allBallPositions = dataAPI.GetBallsPositions();
+
+                using (StreamWriter writer = new StreamWriter(LogFilePath, true))
+                {
+                    writer.WriteLine($"{DateTime.Now}: Logging ball positions");
+                    for (int i = 0; i < allBallPositions.Count; i++)
+                    {
+                        Vector2 position = allBallPositions[i];
+                        writer.WriteLine($"Ball {i + 1}: Position = {position}");
+                    }
+                }
+            });
         }
 
         public override async Task DetectAndHandleCollisions()
@@ -188,15 +263,25 @@ namespace Logic
             });
         }
 
+        public override void OnNext(IBall ball)
+        {
+            lock (lockObject)
+            {
+                int index = dataAPI.GetBallIndex(ball);
+                observer.OnNext(index);
 
-public void HandleCollision(IBall ball1, IBall ball2)
+                _ = DetectAndHandleCollisions();
+            }
+        }
+
+        public void HandleCollision(IBall ball1, IBall ball2)
         {
             Vector2 normal = Vector2.Normalize(ball2.Position - ball1.Position);
             Vector2 relativeVelocity = ball2.Velocity - ball1.Velocity;
 
             // Calculate velocities after collision
-            float m1 = ball1.Mass;
-            float m2 = ball2.Mass;
+            float m1 = dataAPI.GetBallMass();
+            float m2 = dataAPI.GetBallMass();
             float v1n = Vector2.Dot(normal, ball1.Velocity);
             float v2n = Vector2.Dot(normal, ball2.Velocity);
             float v1nAfter = ((m1 - m2) * v1n + 2 * m2 * v2n) / (m1 + m2);
@@ -209,31 +294,23 @@ public void HandleCollision(IBall ball1, IBall ball2)
 
         private void HandleWallCollision(IBall ball)
         {
-            // Pobierz prędkość piłki
             Vector2 velocity = ball.Velocity;
 
-            // Pobierz szerokość i wysokość planszy
             int boardWidth = GetBoardWidth();
             int boardHeight = GetBoardHeight();
 
-            // Pobierz pozycję piłki
             Vector2 position = ball.Position;
 
-            // Jeśli piłka dotyka lewej lub prawej ściany
             if (position.X <= 0 || position.X >= boardWidth)
             {
-                // Odbij piłkę poziomo, zmieniając składową X prędkości na przeciwną
                 velocity.X *= -1;
             }
 
-            // Jeśli piłka dotyka górnej lub dolnej ściany
             if (position.Y <= 0 || position.Y >= boardHeight)
             {
-                // Odbij piłkę pionowo, zmieniając składową Y prędkości na przeciwną
                 velocity.Y *= -1;
             }
 
-            // Zaktualizuj prędkość piłki
             ball.Velocity = velocity;
         }
     }
